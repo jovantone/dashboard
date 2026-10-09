@@ -1,0 +1,522 @@
+---
+interface Props {
+  title?: string;
+}
+
+const { title = 'Dashboard' } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f3ee" media="(prefers-color-scheme: light)" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=optional" rel="stylesheet">
+  <script is:inline>
+    // Theme detection — runs in <head> before any paint to prevent flash
+    (function() {
+      var t = localStorage.getItem('theme') || 'system';
+      var resolved = t === 'system' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
+      document.documentElement.setAttribute('data-theme', resolved);
+      var themeColor = resolved === 'light' ? '#f5f3ee' : '#0f0f0f';
+      document.querySelectorAll('meta[name="theme-color"]').forEach(function(m) { m.setAttribute('content', themeColor); });
+    })();
+  </script>
+  <style is:global>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #0f0f0f;
+      --text: #e8e4d9;
+      --text-dim: #9a9689;
+      --accent: #ff6b00;
+      --border: #e8e4d9;
+      --border-dim: #333;
+      --modal-bg: #1a1a1a;
+      --hover-bg: rgba(232, 228, 217, 0.03);
+      --backdrop: rgba(0, 0, 0, 0.8);
+      --font: "Berkeley Mono", "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
+    }
+
+    [data-theme="light"] {
+      --bg: #f5f3ee;
+      --text: #1a1a1a;
+      --text-dim: #6b6860;
+      --accent: #e05500;
+      --border: #1a1a1a;
+      --border-dim: #d5d0c6;
+      --modal-bg: #ffffff;
+      --hover-bg: rgba(0, 0, 0, 0.03);
+      --backdrop: rgba(0, 0, 0, 0.4);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.4;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 32px 24px;
+    }
+
+    .dashboard {
+      max-width: 720px;
+      width: 100%;
+      min-height: calc(100vh - 64px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .header-right {
+      display: flex;
+      gap: 12px;
+    }
+
+    .header-id {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+
+    h1 {
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      line-height: 1;
+      margin-bottom: 2px;
+      margin-left: -3px;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .divider {
+      height: 2px;
+      background: var(--border);
+      margin-bottom: 20px;
+    }
+
+    /* Sections */
+    #sections {
+      flex: 1;
+    }
+
+    .section {
+      margin-bottom: 20px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-dim);
+      padding-bottom: 6px;
+      margin-bottom: 4px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .section-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Links */
+    .links {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 12px;
+      text-decoration: none;
+      color: var(--text);
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+
+    .link:hover {
+      border-color: var(--border-dim);
+      background: var(--hover-bg);
+    }
+
+    .link:hover .link-name {
+      color: var(--accent);
+    }
+
+    .link-indicator {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .link .drag-handle {
+      opacity: 0.6;
+    }
+
+    .link:hover .drag-handle {
+      opacity: 1;
+    }
+
+    .link-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .link-name {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      transition: color 0.15s ease;
+    }
+
+    .link-desc {
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .link-actions {
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .link:hover .link-actions {
+      opacity: 1;
+    }
+
+    /* Buttons */
+    .btn {
+      font-family: var(--font);
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border: 1px solid var(--border-dim);
+      background: transparent;
+      color: var(--text-dim);
+      padding: 4px 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-add {
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border: 1px solid var(--border-dim);
+      background: transparent;
+      color: var(--text-dim);
+      padding: 2px 8px;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: all 0.15s ease;
+    }
+
+    .btn-add:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-danger:hover {
+      border-color: #ff4444;
+      color: #ff4444;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-dim);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-text {
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+
+    .footer-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* Time display */
+    .time {
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: var(--backdrop);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .modal {
+      background: var(--modal-bg);
+      border: 1px solid var(--border-dim);
+      padding: 24px;
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .modal-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+    }
+
+    .field {
+      margin-bottom: 12px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    .field input, .field select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border-dim);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    .field input:focus, .field select:focus {
+      border-color: var(--accent);
+    }
+
+    .field select option {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+
+    .btn-submit {
+      font-family: var(--font);
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: var(--bg);
+      padding: 8px 20px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: all 0.15s ease;
+    }
+
+    .btn-submit:hover {
+      background: #e65f00;
+    }
+
+    .btn-cancel {
+      font-family: var(--font);
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border: 1px solid var(--border-dim);
+      background: transparent;
+      color: var(--text-dim);
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-cancel:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    /* Drag & drop */
+    .drag-handle {
+      cursor: grab;
+      color: var(--text-dim);
+      font-size: 13px;
+      user-select: none;
+      flex-shrink: 0;
+      width: 12px;
+      text-align: center;
+      transition: color 0.15s ease;
+    }
+
+    .drag-handle:hover {
+      color: var(--accent);
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .section-header {
+      cursor: grab;
+    }
+
+    .section-header:active {
+      cursor: grabbing;
+    }
+
+    .sortable-ghost {
+      opacity: 0.15;
+    }
+
+    .sortable-chosen {
+      opacity: 0.8;
+    }
+
+    .links-empty-placeholder {
+      padding: 8px 12px;
+      color: var(--border-dim);
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: center;
+      border: 1px dashed var(--border-dim);
+      display: none;
+    }
+
+    .links:empty .links-empty-placeholder,
+    .links-empty-placeholder:only-child {
+      display: block;
+    }
+
+    /* HTMX indicator */
+    .htmx-request .htmx-indicator {
+      opacity: 1;
+    }
+
+    .htmx-indicator {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+  </style>
+</head>
+<body>
+  <script is:inline>
+    // Panel redirect — only hide body when a redirect is actually happening
+    (function() {
+      if (window.location.pathname === '/' && !new URLSearchParams(window.location.search).has('panel')) {
+        var saved = localStorage.getItem('activePanel');
+        if (saved) {
+          document.body.style.visibility = 'hidden';
+          window.location.replace('/?panel=' + saved);
+        }
+      }
+    })();
+  </script>
+  <slot />
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <script is:inline>
+    // Auto-close tab after 3 minutes of inactivity
+    (function() {
+      var IDLE_TIMEOUT = 3 * 60 * 1000; // 3 minutes
+      var timer;
+
+      function resetTimer() {
+        clearTimeout(timer);
+        timer = setTimeout(closePage, IDLE_TIMEOUT);
+      }
+
+      function closePage() {
+        // Try closing the tab (works if opened via JS or link)
+        window.close();
+        // Fallback: blank the page so it's obvious the tab is stale
+        setTimeout(function() {
+          document.title = 'Tab expired';
+          document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:monospace;color:#666;font-size:14px;">This tab auto-closed after inactivity. You can close it.</div>';
+        }, 300);
+      }
+
+      // Reset on any interaction
+      ['mousemove', 'keydown', 'scroll', 'click', 'touchstart'].forEach(function(evt) {
+        document.addEventListener(evt, resetTimer, { passive: true });
+      });
+
+      resetTimer();
+    })();
+  </script>
+</body>
+</html>

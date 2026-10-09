@@ -1,0 +1,914 @@
+---
+import Layout from '../layouts/Layout.astro'
+import { getPanels, getCategories, getLinksByPanel, getLinks } from '../lib/db'
+import type { Panel, Category, Link } from '../lib/db'
+
+const panels = await getPanels()
+const panelParam = Astro.url.searchParams.get('panel')
+
+// Determine active panel: from URL param, or default to first panel
+let activePanel: Panel | undefined
+if (panelParam) {
+  activePanel = panels.find(p => p.id === Number(panelParam))
+}
+if (!activePanel && panels.length > 0) {
+  activePanel = panels[0]
+}
+
+const categories = activePanel
+  ? await getCategories(activePanel.id)
+  : await getCategories()
+
+const links = activePanel
+  ? await getLinksByPanel(activePanel.id)
+  : await getLinks()
+
+function linksByCategory(categoryId: number): Link[] {
+  return links.filter(l => l.category_id === categoryId)
+}
+---
+
+<Layout>
+  <div class='dashboard' x-data='dashboard()'>
+    <div class='header'>
+      <span class='header-id'>OPS Dashboard</span>
+      <div class='header-right'>
+        <span class='time' id='date'></span>
+        <span class='time' id='clock'></span>
+      </div>
+    </div>
+
+    <div class='title-row'>
+      <h1>COMMAND</h1>
+      <!-- Panel Switcher -->
+      <div class='panel-switcher'>
+        {
+          panels.map((panel: Panel) => (
+            <a
+              href={`/?panel=${panel.id}`}
+              class:list={[
+                'panel-tab',
+                { active: activePanel?.id === panel.id },
+              ]}>
+              {panel.name}
+            </a>
+          ))
+        }
+        <button class='panel-tab panel-tab-add' x-on:click='openAddPanel()'
+          >+</button
+        >
+      </div>
+    </div>
+    <div class='subtitle'>Mission Control</div>
+    <div class='divider'></div>
+
+    {
+      categories.length === 0 ? (
+        <div class='empty-state'>
+          <div class='empty-state-label'>No categories yet</div>
+          <p class='empty-state-hint'>
+            Create a category to start adding links to this panel.
+          </p>
+          <button class='btn-submit' x-on:click='openAddCategory()'>
+            + Add Category
+          </button>
+        </div>
+      ) : (
+        <div id='sections'>
+          {categories.map((cat: Category) => {
+            const catLinks = linksByCategory(cat.id)
+            return (
+              <div class='section' id={`category-${cat.id}`}>
+                <div class='section-header'>
+                  <span
+                    class='section-title'
+                    x-on:dblclick={`openRenameCategory(${cat.id}, '${cat.name.replace(/'/g, "\\'")}')`}>
+                    {cat.name}
+                  </span>
+                  <div class='section-meta'>
+                    <button
+                      class='btn-add'
+                      x-on:click={`openAdd(${cat.id}, '${cat.name}')`}>
+                      + Add
+                    </button>
+                    <button
+                      class='btn-add btn-danger'
+                      x-on:click={`confirmDeleteCategory(${cat.id})`}>
+                      Del
+                    </button>
+                  </div>
+                </div>
+                <div class='links' id={`links-${cat.id}`}>
+                  {catLinks.map((link: Link) => (
+                    <div class='link' id={`link-${link.id}`}>
+                      <div class='drag-handle' title='Drag to reorder'>
+                        ⠿
+                      </div>
+                      <a
+                        href={link.url}
+                        style='display:contents;color:inherit;text-decoration:none;'>
+                        <div class='link-content'>
+                          <div class='link-name'>{link.name}</div>
+                          <div class='link-desc'>{link.description}</div>
+                        </div>
+                      </a>
+                      <div class='link-actions'>
+                        <button
+                          class='btn'
+                          x-on:click={`openEdit(${link.id}, '${link.name.replace(/'/g, "\\'")}', '${link.description.replace(/'/g, "\\'")}', '${link.url}', ${link.category_id})`}>
+                          Edit
+                        </button>
+                        <button
+                          class='btn btn-danger'
+                          x-on:click={`confirmDelete(${link.id})`}>
+                          Del
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+
+    <div class='footer'>
+      <span class='footer-text'>Internal use only</span>
+      <div class='footer-actions'>
+        <button class='btn-add' x-on:click='openAddCategory()'
+          >+ Category</button
+        >
+        <button class='btn-add btn-danger' x-on:click='confirmDeletePanel()'
+          >Delete Panel</button
+        >
+        <button
+          class='btn-add'
+          x-on:click='toggleTheme()'
+          x-text="theme === 'light' ? 'Light' : theme === 'dark' ? 'Dark' : 'System'"
+        ></button>
+      </div>
+    </div>
+
+    <!-- Add/Edit Link Modal -->
+    <div
+      class='modal-backdrop'
+      x-show='showModal'
+      x-cloak
+      x-on:keydown.escape.window='showModal = false'
+      x-transition:enter='transition ease-out duration-150'
+      x-transition:enter-start='opacity-0'
+      x-transition:enter-end='opacity-100'
+      x-transition:leave='transition ease-in duration-100'
+      x-transition:leave-start='opacity-100'
+      x-transition:leave-end='opacity-0'
+      style='display:none;'>
+      <div class='modal' x-on:click.stop>
+        <div class='modal-title' x-text="editId ? 'Edit Link' : 'Add Link'">
+        </div>
+        <form x-ref='linkForm' x-on:submit.prevent='submitLink()'>
+          <div class='field'>
+            <label>Name</label>
+            <input
+              type='text'
+              x-model='form.name'
+              x-ref='linkNameInput'
+              required
+              placeholder='Link name'
+              data-1p-ignore
+            />
+          </div>
+          <div class='field'>
+            <label>Description</label>
+            <input
+              type='text'
+              x-model='form.description'
+              placeholder='Short description'
+              data-1p-ignore
+            />
+          </div>
+          <div class='field'>
+            <label>URL</label>
+            <input
+              type='url'
+              x-model='form.url'
+              required
+              placeholder='https://...'
+              data-1p-ignore
+            />
+          </div>
+          <template x-if='!editId'>
+            <div class='field'>
+              <label>Category</label>
+              <select x-model='form.category_id'>
+                {
+                  categories.map((cat: Category) => (
+                    <option value={cat.id}>{cat.name}</option>
+                  ))
+                }
+              </select>
+            </div>
+          </template>
+          <div class='modal-actions'>
+            <button
+              type='button'
+              class='btn-cancel'
+              x-on:click='showModal = false'>Cancel</button
+            >
+            <button
+              type='submit'
+              class='btn-submit'
+              x-text="editId ? 'Update' : 'Add'"></button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Add/Rename Category Modal -->
+    <div
+      class='modal-backdrop'
+      x-show='showCategoryModal'
+      x-cloak
+      x-on:keydown.escape.window='showCategoryModal = false'
+      style='display:none;'>
+      <div class='modal' x-on:click.stop>
+        <div
+          class='modal-title'
+          x-text="editCategoryId ? 'Rename Category' : 'Add Category'">
+        </div>
+        <form x-on:submit.prevent='submitCategory()'>
+          <div class='field'>
+            <label>Name</label>
+            <input
+              type='text'
+              x-model='categoryName'
+              x-ref='categoryNameInput'
+              required
+              placeholder='Category name'
+              data-1p-ignore
+            />
+          </div>
+          <div class='modal-actions'>
+            <button
+              type='button'
+              class='btn-cancel'
+              x-on:click='showCategoryModal = false'>Cancel</button
+            >
+            <button
+              type='submit'
+              class='btn-submit'
+              x-text="editCategoryId ? 'Rename' : 'Add'"></button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Add Panel Modal -->
+    <div
+      class='modal-backdrop'
+      x-show='showPanelModal'
+      x-cloak
+      x-on:keydown.escape.window='showPanelModal = false'
+      style='display:none;'>
+      <div class='modal' x-on:click.stop>
+        <div class='modal-title'>Add Panel</div>
+        <form x-on:submit.prevent='submitPanel()'>
+          <div class='field'>
+            <label>Name</label>
+            <input
+              type='text'
+              x-model='panelName'
+              x-ref='panelNameInput'
+              required
+              placeholder='e.g. House, Van'
+              data-1p-ignore
+            />
+          </div>
+          <div class='modal-actions'>
+            <button
+              type='button'
+              class='btn-cancel'
+              x-on:click='showPanelModal = false'>Cancel</button
+            >
+            <button type='submit' class='btn-submit'>Add</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Delete Panel Confirm Modal -->
+    <div
+      class='modal-backdrop'
+      x-show='showDeletePanelModal'
+      x-cloak
+      x-on:keydown.escape.window='showDeletePanelModal = false'
+      x-on:keydown.enter.window='showDeletePanelModal && doDeletePanel()'
+      style='display:none;'>
+      <div class='modal' x-on:click.stop>
+        <div class='modal-title'>Delete Panel</div>
+        <p
+          style='color: var(--text-dim); font-size: 13px; margin-bottom: 24px;'>
+          This panel and all its categories and links will be permanently
+          removed.
+        </p>
+        <div class='modal-actions'>
+          <button
+            type='button'
+            class='btn-cancel'
+            x-on:click='showDeletePanelModal = false'>Cancel</button
+          >
+          <button
+            type='button'
+            class='btn-submit'
+            style='background: #ff4444; border-color: #ff4444;'
+            x-on:click='doDeletePanel()'>Delete</button
+          >
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Category Confirm Modal -->
+    <div
+      class='modal-backdrop'
+      x-show='showDeleteCategoryModal'
+      x-cloak
+      x-on:keydown.escape.window='showDeleteCategoryModal = false'
+      x-on:keydown.enter.window='showDeleteCategoryModal && doDeleteCategory()'
+      style='display:none;'>
+      <div class='modal' x-on:click.stop>
+        <div class='modal-title'>Delete Category</div>
+        <p
+          style='color: var(--text-dim); font-size: 13px; margin-bottom: 24px;'>
+          This category and all its links will be permanently removed.
+        </p>
+        <div class='modal-actions'>
+          <button
+            type='button'
+            class='btn-cancel'
+            x-on:click='showDeleteCategoryModal = false'>Cancel</button
+          >
+          <button
+            type='button'
+            class='btn-submit'
+            style='background: #ff4444; border-color: #ff4444;'
+            x-on:click='doDeleteCategory()'>Delete</button
+          >
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Confirm Modal -->
+    <div
+      class='modal-backdrop'
+      x-show='showDeleteModal'
+      x-cloak
+      x-on:keydown.escape.window='showDeleteModal = false'
+      x-on:keydown.enter.window='showDeleteModal && doDelete()'
+      style='display:none;'>
+      <div class='modal' x-on:click.stop>
+        <div class='modal-title'>Confirm Delete</div>
+        <p
+          style='color: var(--text-dim); font-size: 13px; margin-bottom: 24px;'>
+          This link will be permanently removed.
+        </p>
+        <div class='modal-actions'>
+          <button
+            type='button'
+            class='btn-cancel'
+            x-on:click='showDeleteModal = false'>Cancel</button
+          >
+          <button
+            type='button'
+            class='btn-submit'
+            style='background: #ff4444; border-color: #ff4444;'
+            x-on:click='doDelete()'>Delete</button
+          >
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script
+    is:inline
+    define:vars={{
+      activePanelId: activePanel?.id ?? null,
+      panelIds: panels.map(p => p.id),
+    }}
+  >
+    if (activePanelId)
+      localStorage.setItem('activePanel', String(activePanelId))
+    window.__activePanelId = activePanelId
+    window.__panelIds = panelIds
+  </script>
+
+  <script is:inline>
+    function dashboard() {
+      var activePanelId = window.__activePanelId
+      return {
+        showModal: false,
+        showCategoryModal: false,
+        showPanelModal: false,
+        showDeletePanelModal: false,
+        showDeleteCategoryModal: false,
+        showDeleteModal: false,
+        editId: null,
+        deleteId: null,
+        deleteCategoryId: null,
+        editCategoryId: null,
+        categoryName: '',
+        panelName: '',
+        activePanelId: activePanelId,
+        theme: localStorage.getItem('theme') || 'system',
+        form: {
+          name: '',
+          description: '',
+          url: '',
+          category_id: 1,
+        },
+
+        init() {
+          this.initSortable()
+          var self = this
+
+          // Cross-tab sync
+          this._channel = new BroadcastChannel('dashboard')
+          this._channel.onmessage = function () {
+            window.location.reload()
+          }
+
+          window
+            .matchMedia('(prefers-color-scheme: light)')
+            .addEventListener('change', function () {
+              if (self.theme === 'system') self.applyTheme()
+            })
+          // Keyboard shortcuts: 1-9 to switch panels
+          var panelIds = window.__panelIds
+          document.addEventListener('keydown', function (e) {
+            // Don't trigger when typing in inputs, textareas, selects, or contenteditable
+            var tag = e.target.tagName
+            if (
+              tag === 'INPUT' ||
+              tag === 'TEXTAREA' ||
+              tag === 'SELECT' ||
+              e.target.isContentEditable
+            )
+              return
+            // Don't trigger when any modal is open
+            if (
+              self.showModal ||
+              self.showCategoryModal ||
+              self.showPanelModal ||
+              self.showDeletePanelModal ||
+              self.showDeleteCategoryModal ||
+              self.showDeleteModal
+            )
+              return
+
+            var num = parseInt(e.key)
+            if (num >= 1 && num <= 9 && num <= panelIds.length) {
+              window.location.href = '/?panel=' + panelIds[num - 1]
+            }
+          })
+
+          var addTo = new URLSearchParams(window.location.search).get('addTo')
+          if (addTo) {
+            this.openAdd(Number(addTo), '')
+            // Clean up the URL
+            var url = new URL(window.location)
+            url.searchParams.delete('addTo')
+            history.replaceState(null, '', url)
+          }
+        },
+
+        notify() {
+          this._channel.postMessage('reload')
+        },
+
+        initSortable() {
+          var self = this
+          var sectionsEl = document.getElementById('sections')
+          if (!sectionsEl) return
+
+          // Category reordering
+          Sortable.create(sectionsEl, {
+            animation: 150,
+            handle: '.section-header',
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            onEnd: function () {
+              var ids = Array.from(
+                document.querySelectorAll('#sections > .section')
+              ).map(function (el) {
+                return Number(el.id.replace('category-', ''))
+              })
+              fetch('/api/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'categories', ids: ids }),
+              }).then(function () {
+                self.notify()
+              })
+            },
+          })
+
+          // Link reordering (within and across categories)
+          document.querySelectorAll('.links').forEach(function (el) {
+            self.makeLinksSortable(el)
+          })
+        },
+
+        makeLinksSortable(container) {
+          var self = this
+          Sortable.create(container, {
+            group: 'links',
+            animation: 150,
+            handle: '.drag-handle',
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            onEnd: function (evt) {
+              // Save order for the target category
+              var targetContainer = evt.to
+              var targetCategoryId = Number(
+                targetContainer.id.replace('links-', '')
+              )
+              var ids = Array.from(
+                targetContainer.querySelectorAll('.link')
+              ).map(function (el) {
+                return Number(el.id.replace('link-', ''))
+              })
+              fetch('/api/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'links',
+                  categoryId: targetCategoryId,
+                  ids: ids,
+                }),
+              }).then(function () {
+                self.notify()
+              })
+
+              // If moved across categories, also save the source
+              if (evt.from !== evt.to) {
+                var sourceContainer = evt.from
+                var sourceCategoryId = Number(
+                  sourceContainer.id.replace('links-', '')
+                )
+                var sourceIds = Array.from(
+                  sourceContainer.querySelectorAll('.link')
+                ).map(function (el) {
+                  return Number(el.id.replace('link-', ''))
+                })
+                fetch('/api/reorder', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    type: 'links',
+                    categoryId: sourceCategoryId,
+                    ids: sourceIds,
+                  }),
+                })
+              }
+            },
+          })
+        },
+
+        toggleTheme() {
+          var order = ['light', 'dark', 'system']
+          var idx = order.indexOf(this.theme)
+          this.theme = order[(idx + 1) % order.length]
+          localStorage.setItem('theme', this.theme)
+          this.applyTheme()
+        },
+
+        applyTheme() {
+          var resolved = this.theme
+          if (resolved === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: light)')
+              .matches
+              ? 'light'
+              : 'dark'
+          }
+          document.documentElement.setAttribute('data-theme', resolved)
+          var themeColor = resolved === 'light' ? '#f5f3ee' : '#0f0f0f'
+          document
+            .querySelectorAll('meta[name="theme-color"]')
+            .forEach(function (m) {
+              m.setAttribute('content', themeColor)
+            })
+        },
+
+        openAdd(categoryId, categoryName) {
+          this.editId = null
+          this.form = {
+            name: '',
+            description: '',
+            url: '',
+            category_id: categoryId,
+          }
+          this.showModal = true
+          this.$nextTick(() => this.$refs.linkNameInput.focus())
+        },
+
+        openEdit(id, name, description, url, categoryId) {
+          this.editId = id
+          this.form = { name, description, url, category_id: categoryId }
+          this.showModal = true
+          this.$nextTick(() => this.$refs.linkNameInput.focus())
+        },
+
+        confirmDelete(id) {
+          this.deleteId = id
+          this.showDeleteModal = true
+        },
+
+        openAddCategory() {
+          this.editCategoryId = null
+          this.categoryName = ''
+          this.showCategoryModal = true
+          this.$nextTick(() => this.$refs.categoryNameInput.focus())
+        },
+
+        openRenameCategory(categoryId, currentName) {
+          this.editCategoryId = categoryId
+          this.categoryName = currentName
+          this.showCategoryModal = true
+          this.$nextTick(() => {
+            this.$refs.categoryNameInput.focus()
+            this.$refs.categoryNameInput.select()
+          })
+        },
+
+        openAddPanel() {
+          this.panelName = ''
+          this.showPanelModal = true
+          this.$nextTick(() => this.$refs.panelNameInput.focus())
+        },
+
+        confirmDeletePanel() {
+          this.showDeletePanelModal = true
+        },
+
+        confirmDeleteCategory(categoryId) {
+          this.deleteCategoryId = categoryId
+          this.showDeleteCategoryModal = true
+        },
+
+        async doDeleteCategory() {
+          const res = await fetch('/api/categories', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: this.deleteCategoryId }),
+          })
+          if (res.ok) {
+            var el = document.getElementById(
+              'category-' + this.deleteCategoryId
+            )
+            if (el) el.remove()
+          }
+          this.showDeleteCategoryModal = false
+          this.notify()
+        },
+
+        async doDeletePanel() {
+          var ids = window.__panelIds
+          var idx = ids.indexOf(this.activePanelId)
+          var nextId = ids[idx - 1] || ids[idx + 1]
+
+          const res = await fetch('/api/panels', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: this.activePanelId }),
+          })
+          if (res.ok) {
+            this.notify()
+            localStorage.removeItem('activePanel')
+            window.location.href = nextId ? '/?panel=' + nextId : '/'
+          }
+          this.showDeletePanelModal = false
+        },
+
+        async submitLink() {
+          if (this.editId) {
+            const res = await fetch('/api/links', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: this.editId, ...this.form }),
+            })
+            if (res.ok) {
+              const html = await res.text()
+              document.getElementById('link-' + this.editId).outerHTML = html
+            }
+          } else {
+            const res = await fetch('/api/links', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.form),
+            })
+            if (res.ok) {
+              const html = await res.text()
+              const linksContainer = document.getElementById(
+                'links-' + this.form.category_id
+              )
+              linksContainer.insertAdjacentHTML('beforeend', html)
+              // Update count
+            }
+          }
+          this.showModal = false
+          this.notify()
+        },
+
+        async doDelete() {
+          const res = await fetch('/api/links', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: this.deleteId }),
+          })
+          if (res.ok) {
+            const linkEl = document.getElementById('link-' + this.deleteId)
+            const section = linkEl.closest('.section')
+            linkEl.remove()
+          }
+          this.showDeleteModal = false
+          this.notify()
+        },
+
+        async submitCategory() {
+          if (this.editCategoryId) {
+            const res = await fetch('/api/categories', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: this.editCategoryId,
+                name: this.categoryName,
+              }),
+            })
+            if (res.ok) {
+              var section = document.getElementById(
+                'category-' + this.editCategoryId
+              )
+              section.querySelector('.section-title').textContent =
+                this.categoryName
+            }
+          } else {
+            const res = await fetch('/api/categories', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: this.categoryName,
+                panel_id: this.activePanelId,
+              }),
+            })
+            if (res.ok) {
+              const html = await res.text()
+              const sections = document.getElementById('sections')
+              if (sections) {
+                sections.insertAdjacentHTML('beforeend', html)
+                var newSection = sections.lastElementChild
+                var linksContainer = newSection.querySelector('.links')
+                if (linksContainer) this.makeLinksSortable(linksContainer)
+              } else {
+                // Was empty state, reload and open add link modal for new category
+                var match = html.match(/category-(\d+)/)
+                var catId = match ? match[1] : ''
+                window.location.href =
+                  '/?panel=' + this.activePanelId + '&addTo=' + catId
+              }
+            }
+          }
+          this.showCategoryModal = false
+          this.notify()
+        },
+
+        async submitPanel() {
+          const res = await fetch('/api/panels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: this.panelName }),
+          })
+          if (res.ok) {
+            this.notify()
+            const panel = await res.json()
+            // Navigate to the new panel
+            window.location.href = '/?panel=' + panel.id
+          }
+          this.showPanelModal = false
+        },
+      }
+    }
+
+    // Clock
+    function updateClock() {
+      const now = new Date()
+      const time = now.toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+      document.getElementById('clock').textContent = time
+    }
+
+    function updateDate() {
+      const now = new Date()
+      const date = now
+        .toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        })
+        .toUpperCase()
+      document.getElementById('date').textContent = date
+    }
+
+    updateClock()
+    updateDate()
+    setInterval(updateClock, 1000)
+  </script>
+
+  <style>
+    [x-cloak] {
+      display: none !important;
+    }
+
+    /* Title Row */
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Panel Switcher */
+    .panel-switcher {
+      display: flex;
+      gap: 0;
+      border: 1px solid var(--border-dim);
+      border-radius: 6px;
+      overflow: hidden;
+      width: fit-content;
+    }
+
+    .panel-tab {
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 8px 20px;
+      color: var(--text-dim);
+      text-decoration: none;
+      background: transparent;
+      border: none;
+      border-right: 1px solid var(--border-dim);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .panel-tab:last-child {
+      border-right: none;
+    }
+
+    .panel-tab:hover {
+      color: var(--text);
+      background: var(--hover-bg);
+    }
+
+    .panel-tab.active {
+      color: var(--bg);
+      background: var(--text);
+      font-weight: 700;
+    }
+
+    .panel-tab-add {
+      font-size: 14px;
+      padding: 8px 14px;
+      font-weight: 700;
+    }
+
+    /* Empty State */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      text-align: center;
+    }
+
+    .empty-state-label {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .empty-state-hint {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 24px;
+    }
+  </style>
+</Layout>
